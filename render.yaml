@@ -1,0 +1,27 @@
+services:
+  - type: web
+    name: china-reading-studio
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: APP_ENV
+        value: production
+      - key: APP_RATE_LIMIT_PER_HOUR
+        value: 60
+      - key: APP_ACCESS_CODE
+        sync: false
+      - key: LLM_API_KEY
+        sync: false
+      - key: LLM_BASE_URL
+        value: https://api.openai-next.com/v1
+      - key: LLM_MODEL
+        value: gpt-4o-mini
+      - key: LLM_TIMEOUT_SECONDS
+        value: 60
+      - key: LLM_REASONING_EFFORT
+        value: low
+      - key: LLM_MAX_COMPLETION_TOKENS
+        value: 2400
