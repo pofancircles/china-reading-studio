@@ -4,7 +4,7 @@ services:
     runtime: docker
     plan: free
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /ready
+    healthCheckPath: /health
     autoDeployTrigger: commit
     envVars:
       - key: APP_ENV
