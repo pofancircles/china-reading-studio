@@ -21,7 +21,7 @@ load_dotenv(_BACKEND_DIR / ".env", override=False)
 
 SAFE_ERROR_CODES = frozenset({
     "not_configured", "invalid_config", "auth_failed", "provider_error", "invalid_response",
-    "level_violation", "empty_rewrite", "internal_error",
+    "level_violation", "empty_rewrite", "internal_error", "quota_exceeded", "invalid_request",
 })
 
 # The configured compatible provider is the narrowest shared resource in this
@@ -65,7 +65,7 @@ class LLMError(RuntimeError):
 
 
 def _validated_base_url() -> str:
-    base_url = _setting("LLM_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
+    base_url = _setting("LLM_BASE_URL", "https://api.deepseek.com").rstrip("/")
     parsed = urlsplit(base_url)
     is_local = parsed.hostname in {"127.0.0.1", "localhost"}
     if not parsed.scheme or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -76,9 +76,14 @@ def _validated_base_url() -> str:
 
 
 def _provider_metadata() -> tuple[str, str, bool]:
-    base_url = _setting("LLM_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
+    base_url = _setting("LLM_BASE_URL", "https://api.deepseek.com").rstrip("/")
     parsed = urlsplit(base_url)
-    return parsed.netloc or parsed.path, _setting("LLM_MODEL", "deepseek-chat"), bool(_setting("LLM_API_KEY"))
+    return parsed.netloc or parsed.path, _setting("LLM_MODEL", "deepseek-v4-flash"), bool(_setting("LLM_API_KEY"))
+
+
+def _uses_deepseek_payload(base_url: str, model: str) -> bool:
+    host = (urlsplit(base_url).hostname or "").lower()
+    return host == "api.deepseek.com" or host.endswith(".deepseek.com") or model.lower().startswith("deepseek")
 
 
 def get_model_status() -> dict[str, str | bool]:
@@ -123,7 +128,15 @@ async def _post_completion(payload: dict, api_key: str, base_url: str, timeout: 
                 try:
                     response.raise_for_status()
                 except httpx.HTTPStatusError as exc:
-                    code = "auth_failed" if exc.response.status_code in {401, 403} else "provider_error"
+                    status_code = exc.response.status_code
+                    if status_code in {401, 403}:
+                        code = "auth_failed"
+                    elif status_code == 402:
+                        code = "quota_exceeded"
+                    elif status_code in {400, 404, 422}:
+                        code = "invalid_request"
+                    else:
+                        code = "provider_error"
                     raise LLMError("LLM provider rejected the request", code) from exc
                 return response
     except LLMError:
@@ -137,7 +150,7 @@ async def complete_json(system: str, user: str, max_completion_tokens: int | Non
     if not api_key:
         raise LLMError("LLM_API_KEY is not configured", "not_configured")
     base_url = _validated_base_url()
-    model = _setting("LLM_MODEL", "deepseek-chat")
+    model = _setting("LLM_MODEL", "deepseek-v4-flash")
     reasoning_effort = _setting("LLM_REASONING_EFFORT", "low").lower()
     if reasoning_effort not in {"low", "medium", "high"}:
         raise LLMError("LLM_REASONING_EFFORT is invalid", "invalid_config")
@@ -158,9 +171,9 @@ async def complete_json(system: str, user: str, max_completion_tokens: int | Non
         "temperature": 0.35,
         "response_format": {"type": "json_object"},
     }
-    provider_host = urlsplit(base_url).hostname or ""
-    if provider_host.endswith("deepseek.com") or model.lower().startswith("deepseek"):
+    if _uses_deepseek_payload(base_url, model):
         payload["max_tokens"] = token_limit
+        payload["thinking"] = {"type": "disabled"}
     else:
         payload["max_completion_tokens"] = token_limit
     if model.lower().startswith(("gpt-5", "o1", "o3", "o4")):
@@ -221,6 +234,9 @@ async def probe_model(timeout_seconds: float = 30.0) -> dict[str, str | bool | i
             "temperature": 0,
             "response_format": {"type": "json_object"},
         }
+        if _uses_deepseek_payload(base_url, model):
+            payload["max_tokens"] = 64
+            payload["thinking"] = {"type": "disabled"}
         timeout = httpx.Timeout(max(2.0, min(float(timeout_seconds), 60.0)), connect=8.0)
         response = await _post_completion(payload, _setting("LLM_API_KEY"), base_url, timeout)
         content = _content_text(response.json())

@@ -29,6 +29,15 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/ready")
+async def readiness() -> dict[str, str]:
+    model = get_model_status()
+    access = get_access_status()
+    if not model["configured"] or (access["access_required"] and not access["access_configured"]):
+        raise HTTPException(status_code=503, detail="service_not_configured")
+    return {"status": "ready"}
+
+
 @app.get("/api/model-status")
 async def model_status() -> dict[str, str | bool | int]:
     return {**get_model_status(), **get_access_status()}

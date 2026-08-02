@@ -287,6 +287,8 @@ async def _rewrite(text: str, level: str, keep_words: list[str]) -> tuple[dict, 
                     "invalid_response": "改写 JSON 缺少有效句子、来源编号或元信息",
                     "provider_error": "模型服务未在时限内返回",
                     "auth_failed": "模型认证失败",
+                    "quota_exceeded": "模型账户额度不足",
+                    "invalid_request": "模型名称或请求参数不兼容",
                     "not_configured": "本地未配置模型密钥",
                     "invalid_config": "模型地址或超时配置无效",
                 }.get(exc.code, "改写没有通过确定性检查")

@@ -42,8 +42,8 @@ npm run dev -- --port 3000
 
 ```text
 LLM_API_KEY=your-key-here
-LLM_BASE_URL=https://api.deepseek.com/v1
-LLM_MODEL=deepseek-chat
+LLM_BASE_URL=https://api.deepseek.com
+LLM_MODEL=deepseek-v4-flash
 LLM_TIMEOUT_SECONDS=60
 LLM_REASONING_EFFORT=low
 LLM_MAX_COMPLETION_TOKENS=2400
@@ -52,7 +52,7 @@ APP_ACCESS_CODE=
 APP_RATE_LIMIT_PER_HOUR=60
 ```
 
-线上默认使用 DeepSeek 官方 OpenAI-compatible API。用户粘贴的文章和生成请求会发送到 `LLM_BASE_URL` 指向的模型供应商；部署者可以通过环境变量更换其他兼容服务。
+线上默认使用 DeepSeek 官方 OpenAI-compatible API 和非推理模型 `deepseek-v4-flash`。用户粘贴的文章和生成请求会发送到 `LLM_BASE_URL` 指向的模型供应商，并按该供应商的条款和隐私政策处理；不要提交学生身份、联系方式或其他机密材料。部署者可以通过环境变量更换其他兼容服务。
 
 线上环境必须设置 `APP_ENV=production`、`APP_ACCESS_CODE` 和 `LLM_API_KEY`。网页会要求输入访问码；服务还会按 IP 做每小时请求限制，避免公开网址被滥用。
 

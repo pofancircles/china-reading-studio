@@ -31,6 +31,28 @@ def fake_setting(name: str, default: str = "") -> str:
 
 
 class LlmRetryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_deepseek_http_errors_are_classified_without_leaking_response(self):
+        class RejectClient:
+            def __init__(self, status_code: int, **_: object) -> None:
+                self.status_code = status_code
+
+            async def __aenter__(self):
+                return self
+
+            async def __aexit__(self, *_: object) -> None:
+                return None
+
+            async def post(self, *_: object, **__: object):
+                request = llm.httpx.Request("POST", "https://api.deepseek.com/chat/completions")
+                return llm.httpx.Response(self.status_code, request=request)
+
+        for status_code, expected_code in ((402, "quota_exceeded"), (422, "invalid_request"), (429, "provider_error")):
+            with self.subTest(status_code=status_code):
+                with patch("llm.httpx.AsyncClient", lambda **kwargs: RejectClient(status_code, **kwargs)):
+                    with self.assertRaises(LLMError) as raised:
+                        await llm._post_completion({}, "test-key", "https://api.deepseek.com", llm.httpx.Timeout(5.0))
+                self.assertEqual(raised.exception.code, expected_code)
+
     async def test_provider_error_retries_once_with_short_backoff(self):
         post = AsyncMock(side_effect=[LLMError("temporary", "provider_error"), FakeResponse()])
         sleep = AsyncMock()
@@ -63,8 +85,8 @@ class LlmRetryTests(unittest.IsolatedAsyncioTestCase):
     async def test_deepseek_uses_max_tokens_and_json_mode(self):
         post = AsyncMock(return_value=FakeResponse())
         with (
-            patch("llm._setting", side_effect=lambda name, default="": "deepseek-chat" if name == "LLM_MODEL" else fake_setting(name, default)),
-            patch("llm._validated_base_url", return_value="https://api.deepseek.com/v1"),
+            patch("llm._setting", side_effect=lambda name, default="": "deepseek-v4-flash" if name == "LLM_MODEL" else fake_setting(name, default)),
+            patch("llm._validated_base_url", return_value="https://api.deepseek.com"),
             patch("llm._post_completion", post),
         ):
             await llm.complete_json("system", "user")
@@ -72,6 +94,7 @@ class LlmRetryTests(unittest.IsolatedAsyncioTestCase):
         payload = post.await_args.args[0]
         self.assertEqual(payload["max_tokens"], 2400)
         self.assertNotIn("max_completion_tokens", payload)
+        self.assertEqual(payload["thinking"], {"type": "disabled"})
         self.assertEqual(payload["response_format"], {"type": "json_object"})
 
     async def test_invalid_json_is_not_retried(self):
@@ -102,6 +125,19 @@ class LlmRetryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(raised.exception.code, "auth_failed")
         self.assertEqual(post.await_count, 1)
         sleep.assert_not_awaited()
+
+    async def test_deepseek_probe_disables_thinking(self):
+        post = AsyncMock(return_value=FakeResponse())
+        with (
+            patch("llm._setting", side_effect=lambda name, default="": "deepseek-v4-flash" if name == "LLM_MODEL" else fake_setting(name, default)),
+            patch("llm._validated_base_url", return_value="https://api.deepseek.com"),
+            patch("llm._post_completion", post),
+        ):
+            result = await llm.probe_model()
+
+        self.assertTrue(result["ok"])
+        payload = post.await_args.args[0]
+        self.assertEqual(payload["thinking"], {"type": "disabled"})
 
     async def test_provider_semaphore_serializes_concurrent_posts(self):
         state = {"active": 0, "maximum": 0}

@@ -601,6 +601,7 @@ export default function Home() {
             </div>
             <textarea value={text} onChange={(event) => handleTextChange(event.target.value)} className="min-h-[204px] w-full resize-y rounded-xl border border-line bg-paper p-4 text-[15px] leading-8 outline-none transition focus:border-moss focus:ring-4 focus:ring-moss/10" placeholder="粘贴一篇中文文章…" />
             <div className="mt-3 flex items-center justify-between text-xs text-slate-400"><span>{text.length} 字</span><span>建议 80–800 字</span></div>
+            <p className="mt-2 text-[11px] leading-5 text-slate-400">内容会发送给 DeepSeek 处理，请勿粘贴学生个人信息、联系方式或机密材料。</p>
           </div>
 
           <div className="flex flex-col gap-4 rounded-2xl border border-line bg-[#eff4ec] p-5">
@@ -717,14 +718,16 @@ function generationLabel(meta: Package["meta"]) {
 
 function fallbackMessage(code?: Package["meta"]["fallback_code"]) {
   const messages: Record<string, string> = {
-    not_configured: "请在本机填写 backend/.env 的 LLM_API_KEY 后重启后端。",
-    auth_failed: "模型认证失败，请检查本机密钥是否正确、是否有可用额度。",
+    not_configured: "站点尚未配置模型服务，请联系维护者。",
+    auth_failed: "模型认证失败，请由站点维护者检查密钥。",
+    quota_exceeded: "模型账户额度不足，请由站点维护者充值。",
+    invalid_request: "模型名称或请求参数不兼容，请由站点维护者检查配置。",
     provider_error: "模型服务暂时无法访问，请稍后重试。",
     invalid_response: "模型返回格式不完整，请重新生成；系统不会用虚构释义或模板例句补位。",
     empty_rewrite: "模型没有返回可用的改写句子，系统已拦截这次结果。",
     level_violation: "模型结果没有通过当前等级的篇幅、句长、词汇、语法或事实来源检查。",
-    invalid_config: "模型服务地址配置不合法，请检查 backend/.env。",
-    internal_error: "本地生成流程发生临时错误，请重启后端后再试。",
+    invalid_config: "模型服务配置不合法，请联系站点维护者。",
+    internal_error: "生成流程发生临时错误，请稍后重试或联系站点维护者。",
   };
   if (!code) return "部分内容没有生成成功，请重新生成。";
   const codes = code.split(",").map((item) => item.split(":").pop() ?? item);
@@ -738,7 +741,9 @@ function probeResultMessage(probe: ProbeState) {
   }
   const messages: Record<string, string> = {
     not_configured: "未配置本地 API Key",
-    auth_failed: "认证失败，请检查 Key 或额度",
+    auth_failed: "模型认证失败",
+    quota_exceeded: "模型账户额度不足",
+    invalid_request: "模型名称或参数不兼容",
     provider_error: "服务未在限定时间内响应，请稍后重试",
     invalid_response: "服务已响应，但返回格式无法识别",
     invalid_config: "模型服务地址配置有误",
