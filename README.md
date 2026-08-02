@@ -42,8 +42,8 @@ npm run dev -- --port 3000
 
 ```text
 LLM_API_KEY=your-key-here
-LLM_BASE_URL=https://api.openai-next.com/v1
-LLM_MODEL=gpt-4o-mini
+LLM_BASE_URL=https://api.deepseek.com/v1
+LLM_MODEL=deepseek-chat
 LLM_TIMEOUT_SECONDS=60
 LLM_REASONING_EFFORT=low
 LLM_MAX_COMPLETION_TOKENS=2400
@@ -52,7 +52,7 @@ APP_ACCESS_CODE=
 APP_RATE_LIMIT_PER_HOUR=60
 ```
 
-`api.openai-next.com` 是本项目配置的第三方 OpenAI-compatible 服务，不代表 OpenAI 官方服务。用户粘贴的文章和生成请求会发送到 `LLM_BASE_URL` 指向的供应商。
+线上默认使用 DeepSeek 官方 OpenAI-compatible API。用户粘贴的文章和生成请求会发送到 `LLM_BASE_URL` 指向的模型供应商；部署者可以通过环境变量更换其他兼容服务。
 
 线上环境必须设置 `APP_ENV=production`、`APP_ACCESS_CODE` 和 `LLM_API_KEY`。网页会要求输入访问码；服务还会按 IP 做每小时请求限制，避免公开网址被滥用。
 

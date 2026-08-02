@@ -60,6 +60,20 @@ class LlmRetryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertNotIn("reasoning_effort", post.await_args.args[0])
 
+    async def test_deepseek_uses_max_tokens_and_json_mode(self):
+        post = AsyncMock(return_value=FakeResponse())
+        with (
+            patch("llm._setting", side_effect=lambda name, default="": "deepseek-chat" if name == "LLM_MODEL" else fake_setting(name, default)),
+            patch("llm._validated_base_url", return_value="https://api.deepseek.com/v1"),
+            patch("llm._post_completion", post),
+        ):
+            await llm.complete_json("system", "user")
+
+        payload = post.await_args.args[0]
+        self.assertEqual(payload["max_tokens"], 2400)
+        self.assertNotIn("max_completion_tokens", payload)
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+
     async def test_invalid_json_is_not_retried(self):
         post = AsyncMock(return_value=FakeResponse("not-json"))
         with (

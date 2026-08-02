@@ -65,7 +65,7 @@ class LLMError(RuntimeError):
 
 
 def _validated_base_url() -> str:
-    base_url = _setting("LLM_BASE_URL", "https://api.openai-next.com/v1").rstrip("/")
+    base_url = _setting("LLM_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
     parsed = urlsplit(base_url)
     is_local = parsed.hostname in {"127.0.0.1", "localhost"}
     if not parsed.scheme or not parsed.netloc or parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -76,9 +76,9 @@ def _validated_base_url() -> str:
 
 
 def _provider_metadata() -> tuple[str, str, bool]:
-    base_url = _setting("LLM_BASE_URL", "https://api.openai-next.com/v1").rstrip("/")
+    base_url = _setting("LLM_BASE_URL", "https://api.deepseek.com/v1").rstrip("/")
     parsed = urlsplit(base_url)
-    return parsed.netloc or parsed.path, _setting("LLM_MODEL", "gpt-4o-mini"), bool(_setting("LLM_API_KEY"))
+    return parsed.netloc or parsed.path, _setting("LLM_MODEL", "deepseek-chat"), bool(_setting("LLM_API_KEY"))
 
 
 def get_model_status() -> dict[str, str | bool]:
@@ -137,7 +137,7 @@ async def complete_json(system: str, user: str, max_completion_tokens: int | Non
     if not api_key:
         raise LLMError("LLM_API_KEY is not configured", "not_configured")
     base_url = _validated_base_url()
-    model = _setting("LLM_MODEL", "gpt-4o-mini")
+    model = _setting("LLM_MODEL", "deepseek-chat")
     reasoning_effort = _setting("LLM_REASONING_EFFORT", "low").lower()
     if reasoning_effort not in {"low", "medium", "high"}:
         raise LLMError("LLM_REASONING_EFFORT is invalid", "invalid_config")
@@ -148,16 +148,21 @@ async def complete_json(system: str, user: str, max_completion_tokens: int | Non
         )
     except ValueError as exc:
         raise LLMError("LLM_MAX_COMPLETION_TOKENS is invalid", "invalid_config") from exc
+    token_limit = max(
+        512,
+        min(max_completion_tokens or configured_token_limit, configured_token_limit),
+    )
     payload = {
         "model": model,
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
         "temperature": 0.35,
         "response_format": {"type": "json_object"},
-        "max_completion_tokens": max(
-            512,
-            min(max_completion_tokens or configured_token_limit, configured_token_limit),
-        ),
     }
+    provider_host = urlsplit(base_url).hostname or ""
+    if provider_host.endswith("deepseek.com") or model.lower().startswith("deepseek"):
+        payload["max_tokens"] = token_limit
+    else:
+        payload["max_completion_tokens"] = token_limit
     if model.lower().startswith(("gpt-5", "o1", "o3", "o4")):
         payload["reasoning_effort"] = reasoning_effort
     try:
