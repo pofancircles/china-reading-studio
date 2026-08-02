@@ -24,6 +24,7 @@ import {
   Volume2,
   X,
 } from "lucide-react";
+import { MaterialsStudio } from "./MaterialsStudio";
 
 type Level = "HSK1" | "HSK2" | "HSK3" | "HSK4";
 type NativeLang = "English" | "Vietnamese";
@@ -204,6 +205,7 @@ export default function Home() {
   const [customWords, setCustomWords] = useState<string[]>([]);
   const [customWord, setCustomWord] = useState("");
   const [result, setResult] = useState<Package | null>(null);
+  const [showMaterialsStudio, setShowMaterialsStudio] = useState(false);
   const [tab, setTab] = useState<Tab>("课堂流程");
   const [loading, setLoading] = useState<"analyze" | "generate" | null>(null);
   const [error, setError] = useState("");
@@ -219,6 +221,9 @@ export default function Home() {
   const wordSet = useMemo(() => new Set(selectedWords), [selectedWords]);
   const candidateWords = useMemo(() => analysis?.topic_word_candidates ?? [], [analysis]);
   const activeProfile = analysis?.level_profile.code === level ? analysis.level_profile : LEVEL_UI[level];
+  const materialsReady = Boolean(result && (["rewrite", "vocab", "questions", "lesson_plan"] as const).every(
+    (component) => result.meta.generation_components?.[component] === "ai",
+  ));
 
   useEffect(() => {
     if (!copied) return;
@@ -305,6 +310,7 @@ export default function Home() {
     setText(value);
     setAnalysis(null);
     setResult(null);
+    setShowMaterialsStudio(false);
     setSelectedWords([]);
     setCustomWords([]);
   }
@@ -313,6 +319,7 @@ export default function Home() {
     setLevel(value);
     setAnalysis(null);
     setResult(null);
+    setShowMaterialsStudio(false);
     setSelectedWords([]);
     setCustomWords([]);
   }
@@ -333,6 +340,7 @@ export default function Home() {
 
   async function handleGenerate(options: { focusLesson?: boolean } = {}) {
     setError("");
+    setShowMaterialsStudio(false);
     setLoading("generate");
     setGenerationProgress({
       components: {
@@ -622,7 +630,7 @@ export default function Home() {
         {analysis && <section className="fade-up mb-6 rounded-2xl border border-line bg-white p-5 shadow-soft">
           <div className="flex flex-col justify-between gap-4 md:flex-row md:items-start">
             <div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-coral">02 / 保留主题词</p><h2 className="mt-1 font-display text-2xl">哪些词，是这节课要教的？</h2><p className="mt-1 text-sm text-slate-500">保留词可以暂时超出 HSK 范围，系统会把它们加入生词与表达，并贯穿课堂流程。</p></div>
-            <button onClick={() => handleGenerate()} disabled={loading !== null || componentLoading !== null} className="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-coral px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b85c45] disabled:opacity-50">{loading === "generate" ? <LoaderCircle className="animate-spin" size={17} /> : <Sparkles size={17} />} {loading === "generate" ? "生成中…" : "生成课堂材料"}</button>
+            <button onClick={() => handleGenerate()} disabled={loading !== null || componentLoading !== null} className="flex shrink-0 items-center justify-center gap-2 rounded-xl bg-coral px-5 py-3 text-sm font-semibold text-white transition hover:bg-[#b85c45] disabled:opacity-50">{loading === "generate" ? <LoaderCircle className="animate-spin" size={17} /> : <Sparkles size={17} />} {loading === "generate" ? "生成中…" : "生成备课方案"}</button>
           </div>
           <LevelComparisonTable comparisons={analysis.level_comparison} selected={level} />
           {(analysis.material_distinctiveness.status === "low" || isLowSeparation(analysis.level_comparison)) && <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/70 px-4 py-3 text-sm text-amber-800"><strong>这段材料的等级区分度有限。</strong> 四个等级的已知词比例接近；生成时仍会按句长、语法、题型和课堂任务拉开差异，但不会为了凑篇幅编造事实。建议换一篇信息更丰富的材料。</div>}
@@ -639,7 +647,7 @@ export default function Home() {
         {loading === "generate" && <GenerationProgressPanel progress={generationProgress} retainingResult={Boolean(result)} />}
 
         {result && <section className="fade-up pb-10">
-          <div className="mb-4 flex flex-col justify-between gap-3 md:flex-row md:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-moss">03 / 教材生成结果</p><h2 className="mt-1 font-display text-3xl">{result.lesson_plan.title || result.rewritten.title || "你的分级阅读课"}</h2></div><div className="flex flex-wrap items-center gap-2 text-xs text-slate-500"><span className="rounded-full bg-[#e6f0e5] px-3 py-1.5 text-moss">{generationLabel(result.meta)}</span><span>{result.meta.level}</span><span>{result.lesson_plan.available ? `${result.lesson_plan.total_minutes} 分钟` : "课堂流程未生成"}</span><span>{result.meta.target_words.length}/{result.meta.level_profile?.max_target_words ?? result.meta.target_words.length} 个目标词</span><span>{Math.round(result.quality.compliance_score * 100)}% 等级合规率</span><span>{result.quality.violations.length} 个超纲词</span><button onClick={() => copyText("整份材料", packageText())} className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-3 py-1.5 font-semibold text-ink transition hover:border-moss"><Copy size={13} /> {copied === "整份材料" ? "已复制" : "复制可用内容"}</button></div></div>
+          <div className="mb-4 flex flex-col justify-between gap-3 md:flex-row md:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-moss">03 / 教材生成结果</p><h2 className="mt-1 font-display text-3xl">{result.lesson_plan.title || result.rewritten.title || "你的分级阅读课"}</h2></div><div className="flex flex-wrap items-center gap-2 text-xs text-slate-500"><span className="rounded-full bg-[#e6f0e5] px-3 py-1.5 text-moss">{generationLabel(result.meta)}</span><span>{result.meta.level}</span><span>{result.lesson_plan.available ? `${result.lesson_plan.total_minutes} 分钟` : "课堂流程未生成"}</span><span>{result.meta.target_words.length}/{result.meta.level_profile?.max_target_words ?? result.meta.target_words.length} 个目标词</span><span>{Math.round(result.quality.compliance_score * 100)}% 等级合规率</span><span>{result.quality.violations.length} 个超纲词</span><button onClick={() => copyText("整份材料", packageText())} className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-3 py-1.5 font-semibold text-ink transition hover:border-moss"><Copy size={13} /> {copied === "整份材料" ? "已复制" : "复制可用内容"}</button><button onClick={() => setShowMaterialsStudio(true)} disabled={!materialsReady} title={materialsReady ? "制作可编辑的 PPT 和课后练习" : "请先补齐分级改写、生词、题目和课堂流程"} className="inline-flex items-center gap-1.5 rounded-full bg-coral px-3.5 py-1.5 font-semibold text-white transition hover:bg-[#b85c45] disabled:cursor-not-allowed disabled:opacity-45"><FileText size={13} /> {materialsReady ? "制作课堂材料" : "补齐内容后制作"}</button></div></div>
           {error && <div role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><AlertTriangle size={17} className="mt-0.5 shrink-0" /> <span>{error}</span></div>}
           {loading !== "generate" && ((result.meta.generation_mode ?? (result.meta.demo_mode ? "demo" : "ai")) !== "ai" || Object.keys(result.meta.generation_warnings ?? {}).length > 0) && <GenerationWarning meta={result.meta} onRetry={() => handleGenerate({ focusLesson: false })} retrying={false} pendingComponent={componentLoading} />}
           <QualitySummary quality={result.quality} level={result.meta.level} />
@@ -649,6 +657,7 @@ export default function Home() {
           {tab === "生词与表达" && <VocabTable vocab={result.vocab} nativeLang={nativeLang} unavailable={result.meta.generation_components?.vocab === "unavailable"} onCopy={() => copyText("生词与表达", result.vocab.map((item) => `${item.word}\t${item.pos}\t${item.meaning}\t${item.example}`).join("\n"))} copied={copied === "生词与表达"} onRetry={() => handleRetryComponent("vocab")} retrying={componentLoading === "vocab" || loading === "generate"} />}
           {tab === "练习题" && <Questions questions={result.questions} unavailable={result.meta.generation_components?.questions === "unavailable"} onCopy={() => copyText("练习题", result.questions.map((item, index) => `${index + 1}. ${item.q}\n答案：${item.answer}\n追问：${item.follow_up}`).join("\n"))} copied={copied === "练习题"} onRetry={() => handleRetryComponent("questions")} retrying={componentLoading === "questions" || loading === "generate"} />}
         </section>}
+        {result && materialsReady && showMaterialsStudio && <MaterialsStudio source={result} onClose={() => setShowMaterialsStudio(false)} />}
       </div>
     </main>
   );
