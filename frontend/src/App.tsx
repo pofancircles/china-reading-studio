@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { MaterialsStudio } from "./MaterialsStudio";
+import type { MaterialSource } from "./materials";
 
 type Level = "HSK1" | "HSK2" | "HSK3" | "HSK4";
 type NativeLang = "English" | "Vietnamese";
@@ -89,45 +90,21 @@ type ProbeResponse = {
   latency_ms?: number;
 };
 
-type Package = {
-  rewritten: {
-    title: string;
+type Package = MaterialSource & {
+  rewritten: Omit<MaterialSource["rewritten"], "sentences"> & {
     sentences: { text: string; source_sentence_ids: number[] }[];
     deleted_info: string;
     teacher_notes: string;
   };
   pinyin: { word: string; pinyin: string }[];
   pinyin_sentences: { word: string; pinyin: string }[][];
-  vocab: {
-    word: string;
+  vocab: (MaterialSource["vocab"][number] & {
     pos: string;
-    meaning: string;
     example: string;
     pitfall: string;
     sino_viet: string;
-  }[];
-  questions: { type: string; q: string; options: string[]; answer: string; follow_up: string }[];
-  lesson_plan: {
-    title: string;
-    total_minutes: number;
-    level_task?: string;
-    objectives: string[];
-    stages: {
-      title: string;
-      start_minute: number;
-      end_minute: number;
-      duration: number;
-      objective: string;
-      teacher_actions: string[];
-      student_actions: string[];
-      materials: string[];
-      prompts: string[];
-      expected_output: string;
-    }[];
-    homework: string;
-    available: boolean;
-    note?: string;
-  };
+  })[];
+  questions: (MaterialSource["questions"][number] & { type: string })[];
   quality: {
     in_level_ratio: number;
     compliance_score: number;
@@ -140,7 +117,7 @@ type Package = {
     grammar_violations: string[];
     details?: { has_violations: boolean; has_overlength_sentences: boolean; has_forbidden_grammar?: boolean; status: "ok" | "needs_review" | "unavailable"; source_limited?: boolean; source_difficulty_limited?: boolean; out_of_level_count?: number; level_profile?: LevelProfile };
   };
-  meta: {
+  meta: MaterialSource["meta"] & {
     demo_mode: boolean;
     generation_mode?: "ai" | "partial" | "demo";
     generation_components?: Record<"rewrite" | "vocab" | "questions" | "lesson_plan", "ai" | "demo" | "unavailable">;
@@ -647,7 +624,37 @@ export default function Home() {
         {loading === "generate" && <GenerationProgressPanel progress={generationProgress} retainingResult={Boolean(result)} />}
 
         {result && <section className="fade-up pb-10">
-          <div className="mb-4 flex flex-col justify-between gap-3 md:flex-row md:items-end"><div><p className="text-xs font-semibold uppercase tracking-[0.18em] text-moss">03 / 教材生成结果</p><h2 className="mt-1 font-display text-3xl">{result.lesson_plan.title || result.rewritten.title || "你的分级阅读课"}</h2></div><div className="flex flex-wrap items-center gap-2 text-xs text-slate-500"><span className="rounded-full bg-[#e6f0e5] px-3 py-1.5 text-moss">{generationLabel(result.meta)}</span><span>{result.meta.level}</span><span>{result.lesson_plan.available ? `${result.lesson_plan.total_minutes} 分钟` : "课堂流程未生成"}</span><span>{result.meta.target_words.length}/{result.meta.level_profile?.max_target_words ?? result.meta.target_words.length} 个目标词</span><span>{Math.round(result.quality.compliance_score * 100)}% 等级合规率</span><span>{result.quality.violations.length} 个超纲词</span><button onClick={() => copyText("整份材料", packageText())} className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-3 py-1.5 font-semibold text-ink transition hover:border-moss"><Copy size={13} /> {copied === "整份材料" ? "已复制" : "复制可用内容"}</button><button onClick={() => setShowMaterialsStudio(true)} disabled={!materialsReady} title={materialsReady ? "制作可编辑的 PPT 和课后练习" : "请先补齐分级改写、生词、题目和课堂流程"} className="inline-flex items-center gap-1.5 rounded-full bg-coral px-3.5 py-1.5 font-semibold text-white transition hover:bg-[#b85c45] disabled:cursor-not-allowed disabled:opacity-45"><FileText size={13} /> {materialsReady ? "制作课堂材料" : "补齐内容后制作"}</button></div></div>
+          <div className="mb-4 flex flex-col justify-between gap-3 md:flex-row md:items-end">
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-[0.18em] text-moss">03 / 教材生成结果</p>
+              <h2 className="mt-1 font-display text-3xl">{result.lesson_plan.title || result.rewritten.title || "你的分级阅读课"}</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <span className="rounded-full bg-[#e6f0e5] px-3 py-1.5 text-moss">{generationLabel(result.meta)}</span>
+              <span>{result.meta.level}</span>
+              <span>{result.lesson_plan.available ? `${result.lesson_plan.total_minutes} 分钟` : "课堂流程未生成"}</span>
+              <span>{result.meta.target_words.length}/{result.meta.level_profile?.max_target_words ?? result.meta.target_words.length} 个目标词</span>
+              <span>{Math.round(result.quality.compliance_score * 100)}% 等级合规率</span>
+              <span>{result.quality.violations.length} 个超纲词</span>
+              <button onClick={() => copyText("整份材料", packageText())} className="inline-flex items-center gap-1 rounded-full border border-line bg-white px-3 py-1.5 font-semibold text-ink transition hover:border-moss"><Copy size={13} /> {copied === "整份材料" ? "已复制" : "复制可用内容"}</button>
+            </div>
+          </div>
+          <div className="mb-4 rounded-2xl border border-moss/20 bg-[#f0f6ee] p-5 shadow-soft">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-moss">04 / 可编辑课堂成品</p>
+                <h3 className="mt-1.5 font-display text-2xl text-ink">把备课结果拆成三类独立材料</h3>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">教师使用的教案与讲台上展示给学生的课件严格分开，避免把教学提示、教师动作或参考答案混进学生页面。</p>
+              </div>
+              <button onClick={() => setShowMaterialsStudio(true)} disabled={!materialsReady} title={materialsReady ? "生成三类可编辑课堂成品" : "请先补齐分级改写、生词、题目和课堂流程"} className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-full bg-coral px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-[#b85c45] disabled:cursor-not-allowed disabled:opacity-45"><FileText size={15} /> {materialsReady ? "进入材料工作台" : "补齐内容后制作"}</button>
+            </div>
+            <div className="mt-5 grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-moss/15 bg-white p-4"><strong className="text-sm text-ink">标准详案 DOCX</strong><p className="mt-1.5 text-xs leading-5 text-slate-500">面向教师的 4–6 页详案，包含目标、教学步骤、教师提示、学生活动与课后安排。</p></div>
+              <div className="rounded-xl border border-moss/15 bg-white p-4"><strong className="text-sm text-ink">纯学生 PPTX</strong><p className="mt-1.5 text-xs leading-5 text-slate-500">只保留学生需要看到的目标、材料、问题和活动指令，不展示教案腔。</p></div>
+              <div className="rounded-xl border border-moss/15 bg-white p-4"><strong className="text-sm text-ink">学生/答案练习 DOCX</strong><p className="mt-1.5 text-xs leading-5 text-slate-500">分别导出学生练习版和教师答案版，课堂内外都能直接使用。</p></div>
+            </div>
+            <p className="mt-4 text-xs leading-5 text-slate-500">导出的 PPTX 可在 PowerPoint 或 WPS 中继续添加图片、视频和音频；DOCX 可在 Word 或 WPS 中继续修改。</p>
+          </div>
           {error && <div role="alert" className="mb-4 flex items-start gap-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"><AlertTriangle size={17} className="mt-0.5 shrink-0" /> <span>{error}</span></div>}
           {loading !== "generate" && ((result.meta.generation_mode ?? (result.meta.demo_mode ? "demo" : "ai")) !== "ai" || Object.keys(result.meta.generation_warnings ?? {}).length > 0) && <GenerationWarning meta={result.meta} onRetry={() => handleGenerate({ focusLesson: false })} retrying={false} pendingComponent={componentLoading} />}
           <QualitySummary quality={result.quality} level={result.meta.level} />

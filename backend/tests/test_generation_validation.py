@@ -8,11 +8,13 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from config import LEVEL_ORDER, get_level_profile  # noqa: E402
 from llm import LLMError, complete_json  # noqa: E402
+from prompts import lesson_plan_prompt  # noqa: E402
 from services import (  # noqa: E402
     _initial_rewrite_keep_words,
     _normalize_rewrite_result,
     _rewrite_quality_issues,
     _select_target_words,
+    _validate_lesson_plan,
     _validate_questions_result,
     _validate_vocab_result,
     generate_component,
@@ -31,7 +33,102 @@ def response_with_content(content: str) -> FakeResponse:
     return FakeResponse({"choices": [{"message": {"content": content}}]})
 
 
+def observable_lesson_plan() -> dict:
+    return {
+        "title": "春节回家阅读课",
+        "level_task": "说明原因",
+        "objectives": ["找出文章的人物和时间", "用三句话复述文章"],
+        "stages": [
+            {
+                "objective": f"说出第{index}阶段的一个关键信息",
+                "teacher_actions": ["展示文章并提问"],
+                "student_actions": ["阅读并回答"],
+                "prompts": ["请找出一个关键信息。"],
+                "expected_output": "一条基于文章的回答",
+            }
+            for index in range(1, 6)
+        ],
+        "homework": "请用三句话写小林为什么回家。",
+    }
+
+
 class GenerationValidationTests(unittest.TestCase):
+    def test_lesson_plan_prompt_separates_teacher_notes_from_student_language(self):
+        prompt = lesson_plan_prompt("小林春节回家。", "HSK2", "English", ["春节"])
+
+        self.assertIn("简短、可观察的动作短语", prompt)
+        self.assertIn("不要只写“理解、掌握、了解”", prompt)
+        self.assertIn("prompts 是课堂上直接展示或直接对学生说的话", prompt)
+        self.assertIn("不得描述教师应该怎么做", prompt)
+        self.assertIn("homework 必须是一条直接对学生说的完整任务指令", prompt)
+        self.assertIn('"objectives":["..."]', prompt)
+        self.assertIn('"homework":"..."', prompt)
+
+    def test_lesson_plan_accepts_observable_goals_and_direct_student_language(self):
+        result = _validate_lesson_plan(observable_lesson_plan(), "HSK2", ["春节"])
+
+        self.assertTrue(result["available"])
+        self.assertEqual(result["total_minutes"], 30)
+        self.assertEqual([stage["start_minute"] for stage in result["stages"]], [0, 4, 12, 19, 27])
+
+    def test_lesson_plan_rejects_vague_goals_and_lesson_plan_language(self):
+        invalid_cases = []
+
+        vague_objective = observable_lesson_plan()
+        vague_objective["objectives"][0] = "理解文章"
+        invalid_cases.append((vague_objective, "objectives[1]"))
+
+        vague_stage = observable_lesson_plan()
+        vague_stage["stages"][2]["objective"] = "掌握重点词汇"
+        invalid_cases.append((vague_stage, "stages[3].objective"))
+
+        narrated_prompt = observable_lesson_plan()
+        narrated_prompt["stages"][1]["prompts"] = ["教师引导学生回答问题。"]
+        invalid_cases.append((narrated_prompt, "stages[2].prompts[1]"))
+
+        narrated_homework = observable_lesson_plan()
+        narrated_homework["homework"] = "课后作业：学生完成三句话。"
+        invalid_cases.append((narrated_homework, "homework"))
+
+        indirect_prompt = observable_lesson_plan()
+        indirect_prompt["stages"][4]["prompts"] = ["课堂小结"]
+        invalid_cases.append((indirect_prompt, "stages[5].prompts[1]"))
+
+        for payload, expected_field in invalid_cases:
+            with self.subTest(field=expected_field):
+                with self.assertRaises(LLMError) as raised:
+                    _validate_lesson_plan(payload, "HSK2", ["春节"])
+                self.assertEqual(raised.exception.code, "invalid_response")
+                self.assertIn(expected_field, str(raised.exception))
+                self.assertTrue(raised.exception.details)
+
+    def test_lesson_plan_validation_failure_is_repaired_once(self):
+        invalid = observable_lesson_plan()
+        invalid["objectives"][0] = "理解文章"
+        mocked = AsyncMock(side_effect=[invalid, observable_lesson_plan()])
+
+        with patch("services.complete_json", mocked):
+            result = asyncio.run(generate_component("lesson_plan", "小林春节回家。", "HSK2", "English", ["春节"]))
+
+        self.assertEqual(mocked.await_count, 2)
+        self.assertEqual(result["status"], "ai")
+        self.assertTrue(result["data"]["available"])
+        self.assertIn("objectives[1] must use an observable action", mocked.await_args_list[1].args[1])
+
+    def test_lesson_plan_stays_unavailable_when_repair_is_still_invalid(self):
+        invalid = observable_lesson_plan()
+        invalid["stages"][0]["prompts"] = ["教师提问，学生回答。"]
+        mocked = AsyncMock(side_effect=[invalid, invalid])
+
+        with patch("services.complete_json", mocked):
+            result = asyncio.run(generate_component("lesson_plan", "小林春节回家。", "HSK2", "English", ["春节"]))
+
+        self.assertEqual(mocked.await_count, 2)
+        self.assertEqual(result["status"], "unavailable")
+        self.assertEqual(result["code"], "invalid_response")
+        self.assertIsNone(result["data"])
+        self.assertTrue(result["details"])
+
     def test_each_level_requires_its_own_question_types(self):
         objective = {"fact", "choice", "sequence", "inference"}
         with patch("services._validate_level_text"):

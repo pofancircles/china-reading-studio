@@ -39,11 +39,11 @@ def valid_lesson_plan():
         "title": "回家过年阅读课",
         "total_minutes": 30,
         "level_task": "说明原因",
-        "objectives": ["理解文章", "谈自己的经历"],
+        "objectives": ["找出文章的人物和时间", "用三句话说自己的经历"],
         "stages": [{
             "name": name,
             "minutes": duration,
-            "goal": "完成本阶段目标",
+            "goal": "说出本阶段的一个关键信息",
             "teacher_actions": ["提出一个具体问题"],
             "student_actions": ["看一看，再回答。"],
             "materials": ["阅读材料"],

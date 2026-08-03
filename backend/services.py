@@ -41,6 +41,27 @@ LESSON_STAGE_MATERIALS = (
 )
 AUTO_KEEP_LIMITS = {"HSK1": 1, "HSK2": 2, "HSK3": 3, "HSK4": 4}
 
+# Lesson objectives need to describe something a teacher can see or hear. Keep
+# this deliberately small and concrete: it rejects the common vague outputs
+# without trying to solve Chinese semantic parsing with a brittle word list.
+LESSON_OBSERVABLE_ACTIONS = (
+    "找出", "圈出", "指出", "说出", "选出", "写出", "标出", "列出",
+    "回答", "复述", "概括", "总结", "比较", "排序", "匹配", "完成", "填写",
+    "朗读", "跟读", "讨论", "对话", "表演", "描述", "解释", "说明", "造句",
+    "编写", "改写", "阅读", "听", "读", "说", "写", "问", "选", "画",
+)
+LESSON_VAGUE_OBJECTIVE_PREFIXES = (
+    "理解", "掌握", "了解", "熟悉", "认识", "学习", "感受", "体会", "培养", "提升", "增强",
+)
+LESSON_PLAN_SPEAK = (
+    "教师", "老师", "学生", "引导", "激活", "教学目标", "本环节", "课堂材料", "分钟",
+)
+LESSON_DIRECT_ACTIONS = (
+    "请", "先", "再", "用", "把", "找", "圈", "指", "说", "选", "写", "标", "列",
+    "回答", "复述", "概括", "总结", "比较", "排序", "匹配", "完成", "填",
+    "读", "听", "看", "想", "讨论", "对话", "表演", "描述", "解释", "说明", "造句",
+)
+
 
 def _unique(items: Iterable[str]) -> list[str]:
     return list(dict.fromkeys(item for item in items if isinstance(item, str) and item.strip()))
@@ -519,6 +540,49 @@ def _validate_questions_result(result: dict, level: str = "", target_words: list
     return normalized
 
 
+def _lesson_plan_error(message: str, detail: str) -> None:
+    raise LLMError(message, "invalid_response", [detail])
+
+
+def _validate_observable_objective(value: object, field: str) -> str:
+    text = str(value).strip() if isinstance(value, str) else ""
+    if not text:
+        _lesson_plan_error(f"{field} is missing", f"{field}：缺少可观察目标")
+    forbidden = next((term for term in LESSON_PLAN_SPEAK if term in text), "")
+    if forbidden:
+        _lesson_plan_error(
+            f"{field} must be an observable action without lesson-plan narration",
+            f"{field}：不要写“{forbidden}”等教案说明，直接写可观察动作",
+        )
+    has_action = any(action in text for action in LESSON_OBSERVABLE_ACTIONS)
+    vague_only = text.startswith(LESSON_VAGUE_OBJECTIVE_PREFIXES) and not has_action
+    if vague_only or not has_action:
+        _lesson_plan_error(
+            f"{field} must use an observable action",
+            f"{field}：“{text}”不是可观察动作，请改为找出、说出、复述、比较或写出等任务",
+        )
+    return text
+
+
+def _validate_student_instruction(value: object, field: str) -> str:
+    text = str(value).strip() if isinstance(value, str) else ""
+    if not text:
+        _lesson_plan_error(f"{field} is missing", f"{field}：缺少直接对学生说的指令")
+    forbidden = next((term for term in LESSON_PLAN_SPEAK if term in text), "")
+    if forbidden or text.startswith("课后作业"):
+        marker = forbidden or "课后作业"
+        _lesson_plan_error(
+            f"{field} must not contain lesson-plan narration",
+            f"{field}：不要写“{marker}”等教案或教师动作说明",
+        )
+    if "？" not in text and "?" not in text and not any(action in text for action in LESSON_DIRECT_ACTIONS):
+        _lesson_plan_error(
+            f"{field} must be a direct student instruction or question",
+            f"{field}：“{text}”不是学生能立刻执行的指令或问题",
+        )
+    return text
+
+
 def _validate_lesson_plan(result: dict, level: str = "", target_words: list[str] | None = None) -> dict:
     if isinstance(result, dict) and isinstance(result.get("lesson_plan"), dict):
         result = result["lesson_plan"]
@@ -529,6 +593,14 @@ def _validate_lesson_plan(result: dict, level: str = "", target_words: list[str]
         valid_tasks = get_level_profile(level).task_focus
         if level_task not in valid_tasks:
             level_task = valid_tasks[0]
+    raw_objectives = result.get("objectives")
+    if not isinstance(raw_objectives, list) or not 2 <= len(raw_objectives) <= 4:
+        _lesson_plan_error("lesson objectives must contain two to four items", "objectives：必须包含 2-4 条可观察目标")
+    objectives = [
+        _validate_observable_objective(value, f"objectives[{index}]")
+        for index, value in enumerate(raw_objectives, start=1)
+    ]
+
     stages = []
     expected_start = 0
     for stage_index, item in enumerate(result["stages"]):
@@ -539,7 +611,10 @@ def _validate_lesson_plan(result: dict, level: str = "", target_words: list[str]
         end = start + duration
         expected_start = end
         title = LESSON_STAGE_TITLES[stage_index]
-        objective = item.get("objective", item.get("goal", ""))
+        objective = _validate_observable_objective(
+            item.get("objective", item.get("goal", "")),
+            f"stages[{stage_index + 1}].objective",
+        )
         expected_output = item.get("expected_output", "")
         for value in (title, objective, expected_output):
             if not isinstance(value, str) or not value.strip():
@@ -551,9 +626,13 @@ def _validate_lesson_plan(result: dict, level: str = "", target_words: list[str]
                 value = [value]
             if not isinstance(value, list):
                 raise LLMError("lesson stage list field is invalid", "invalid_response")
-            lists[key] = [str(entry) for entry in value if str(entry).strip()]
+            lists[key] = [str(entry).strip() for entry in value if str(entry).strip()]
             if not lists[key]:
                 raise LLMError("lesson stage list field is empty", "invalid_response")
+        lists["prompts"] = [
+            _validate_student_instruction(value, f"stages[{stage_index + 1}].prompts[{prompt_index}]")
+            for prompt_index, value in enumerate(lists["prompts"], start=1)
+        ]
         lists["materials"] = list(LESSON_STAGE_MATERIALS[stage_index])
         if level:
             # Only prompts are literal learner-facing Chinese. The other
@@ -570,13 +649,14 @@ def _validate_lesson_plan(result: dict, level: str = "", target_words: list[str]
         })
     if expected_start != 30:
         raise LLMError("lesson plan must total exactly 30 minutes", "invalid_response")
+    homework = _validate_student_instruction(result.get("homework", ""), "homework")
     return {
         "title": str(result.get("title", "30分钟阅读课")),
         "total_minutes": 30,
         "level_task": level_task,
-        "objectives": [str(x) for x in result.get("objectives", [])] if isinstance(result.get("objectives", []), list) else [],
+        "objectives": objectives,
         "stages": stages,
-        "homework": str(result.get("homework", "")),
+        "homework": homework,
         "available": True,
     }
 

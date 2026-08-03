@@ -202,13 +202,20 @@ def lesson_plan_prompt(
 ) -> str:
     """Ask only for pedagogy content; code supplies the fixed timeline."""
     profile = get_level_profile(level)
-    recovery = "这是一次修复重试：必须恰好返回五个非空阶段；只写简短、具体、可执行的教学内容。" if retry else ""
+    recovery = (
+        "这是一次修复重试：必须恰好返回五个非空阶段；只写简短、具体、可执行的教学内容。"
+        "再次检查 objectives 和每段 objective 都是可观察动作，prompts 与 homework 都是直接对学生说的话。"
+        if retry else ""
+    )
     level_task = profile.task_focus[0]
     return f"""为 {level}、母语为 {native_lang} 的学生设计一堂 30 分钟中文阅读课。
 代码会自动补齐严格连续的五阶段时间轴、阶段名和材料，因此不要输出时间或 materials。
 只按顺序返回五段教学内容：导入、理解阅读、词汇与句型、交互练习、总结与迁移。
 每段必须有 objective、teacher_actions、student_actions、prompts、expected_output；每个数组 1-2 条即可。
-teacher_actions 和 student_actions 是给教师看的具体步骤；prompts 是老师能直接对学生说的话，每条不超过 {profile.max_sentence_len} 字。
+objectives 返回 2-4 条；objectives 和每段 objective 都必须是简短、可观察的动作短语，例如“找出人物和时间”“用三句话复述”。不要只写“理解、掌握、了解”，不要写“学生能够”“教师引导”等教案腔。
+teacher_actions 和 student_actions 是给教师看的具体步骤，可以使用教学术语。
+prompts 是课堂上直接展示或直接对学生说的话，每条不超过 {profile.max_sentence_len} 字。只写学生能立刻执行的问题或指令，不得出现“教师、学生、引导、激活、教学目标、本环节、课堂材料、分钟”等教案说明，也不得描述教师应该怎么做。
+homework 必须是一条直接对学生说的完整任务指令，例如“请用……写三句话”。不得写“教师布置……”“学生完成……”或“课后作业：”等说明性前缀。
 所有活动必须基于文章，不编造事实。词汇阶段实际使用：{', '.join(target_words) or '文章关键词'}。
 理解阅读和交互练习围绕同一目标推进。课堂输出任务固定为“{level_task}”，交互练习必须真正执行它。
 {recovery}
