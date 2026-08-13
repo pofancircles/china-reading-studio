@@ -108,6 +108,16 @@ class ServiceTests(unittest.TestCase):
         self.assertEqual(result["questions"], [])
         self.assertEqual(result["lesson_plan"]["stages"], [])
 
+    def test_short_source_exposes_a_short_text_target_without_blocking_rewrite(self):
+        mocked = AsyncMock(return_value=valid_rewrite())
+        source = "小林春节回家。"
+        with patch("services.complete_json", mocked):
+            result = asyncio.run(generate_rewrite_package(source, "HSK2", "English", ["春节"]))
+
+        self.assertEqual(result["meta"]["generation_components"]["rewrite"], "ai")
+        self.assertTrue(result["quality"]["details"]["source_limited"])
+        self.assertEqual(result["quality"]["details"]["short_text_target"], [6, 9])
+
     def test_demo_has_no_fake_vocab_or_questions_and_has_marked_template(self):
         text = "这是一句需要完整保留的中文句子。第二句也要保留。"
         mocked = AsyncMock(side_effect=LLMError("missing", "not_configured"))

@@ -61,6 +61,9 @@ LESSON_DIRECT_ACTIONS = (
     "回答", "复述", "概括", "总结", "比较", "排序", "匹配", "完成", "填",
     "读", "听", "看", "想", "讨论", "对话", "表演", "描述", "解释", "说明", "造句",
 )
+LESSON_OBJECTIVE_PREFIXES = (
+    "学生将能够", "学生能够", "学生可以", "学生能", "学习者能够", "学习者可以", "学习者能",
+)
 
 
 def _unique(items: Iterable[str]) -> list[str]:
@@ -548,6 +551,10 @@ def _validate_observable_objective(value: object, field: str) -> str:
     text = str(value).strip() if isinstance(value, str) else ""
     if not text:
         _lesson_plan_error(f"{field} is missing", f"{field}：缺少可观察目标")
+    for prefix in LESSON_OBJECTIVE_PREFIXES:
+        if text.startswith(prefix):
+            text = text[len(prefix):].lstrip("，,:： ")
+            break
     forbidden = next((term for term in LESSON_PLAN_SPEAK if term in text), "")
     if forbidden:
         _lesson_plan_error(
@@ -556,12 +563,43 @@ def _validate_observable_objective(value: object, field: str) -> str:
         )
     has_action = any(action in text for action in LESSON_OBSERVABLE_ACTIONS)
     vague_only = text.startswith(LESSON_VAGUE_OBJECTIVE_PREFIXES) and not has_action
-    if vague_only or not has_action:
+    if vague_only:
+        text = _normalize_vague_objective(text, field)
+        has_action = True
+    if not has_action:
         _lesson_plan_error(
             f"{field} must use an observable action",
             f"{field}：“{text}”不是可观察动作，请改为找出、说出、复述、比较或写出等任务",
         )
     return text
+
+
+def _normalize_vague_objective(text: str, field: str) -> str:
+    """Convert low-risk pedagogical phrasing into a visible learner action.
+
+    This intentionally does not attempt open-ended rewriting. It maps only
+    common vague objectives to conservative tasks that remain grounded in the
+    supplied reading. Structural errors and teacher narration still fail.
+    """
+    if any(term in text for term in ("词", "词汇", "生词", "句型")):
+        return "说出关键词的意思并用关键词造句"
+    if any(term in text for term in ("顺序", "过程", "经过")):
+        return "按顺序复述文章内容"
+    if "原因" in text:
+        return "找出文中的原因并说出来"
+    if any(term in text for term in ("人物", "时间", "地点")):
+        return "找出文中的人物、时间和地点"
+    if any(term in text for term in ("合作", "交流", "表达")):
+        return "与同伴完成一次对话"
+    if field.startswith("stages[1]"):
+        return "说出与文章主题有关的一条信息"
+    if field.startswith("stages[3]"):
+        return "说出关键词的意思并用关键词造句"
+    if field.startswith("stages[4]"):
+        return "用文章信息完成问答"
+    if field.startswith("stages[5]"):
+        return "用两句话总结文章内容"
+    return "找出文章中的关键信息并说出来"
 
 
 def _validate_student_instruction(value: object, field: str) -> str:
@@ -882,6 +920,10 @@ async def generate_rewrite_package(text: str, level: str, native_lang: str, keep
         "has_forbidden_grammar": bool(quality["grammar_violations"]),
         "status": "unavailable" if rewrite_fallback else ("needs_review" if has_quality_issues else "ok"),
         "source_limited": source_limited,
+        "short_text_target": (
+            [readable_length(text), max(readable_length(text), int(readable_length(text) * 1.5))]
+            if source_limited else None
+        ),
         "source_difficulty_limited": source_difficulty_limited,
         "out_of_level_count": len(quality["violations"]),
         "level_profile": profile.to_dict(),

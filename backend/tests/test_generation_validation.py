@@ -71,16 +71,22 @@ class GenerationValidationTests(unittest.TestCase):
         self.assertEqual(result["total_minutes"], 30)
         self.assertEqual([stage["start_minute"] for stage in result["stages"]], [0, 4, 12, 19, 27])
 
-    def test_lesson_plan_rejects_vague_goals_and_lesson_plan_language(self):
+    def test_lesson_plan_normalizes_common_vague_goals(self):
+        payload = observable_lesson_plan()
+        payload["objectives"][0] = "学生能够理解文章"
+        payload["stages"][2]["objective"] = "学习并运用关键词汇"
+
+        result = _validate_lesson_plan(payload, "HSK2", ["春节"])
+
+        self.assertEqual(result["objectives"][0], "找出文章中的关键信息并说出来")
+        self.assertEqual(result["stages"][2]["objective"], "说出关键词的意思并用关键词造句")
+
+    def test_lesson_plan_rejects_unrecognized_goals_and_lesson_plan_language(self):
         invalid_cases = []
 
-        vague_objective = observable_lesson_plan()
-        vague_objective["objectives"][0] = "理解文章"
-        invalid_cases.append((vague_objective, "objectives[1]"))
-
-        vague_stage = observable_lesson_plan()
-        vague_stage["stages"][2]["objective"] = "掌握重点词汇"
-        invalid_cases.append((vague_stage, "stages[3].objective"))
+        unrecognized_objective = observable_lesson_plan()
+        unrecognized_objective["objectives"][0] = "深化文本素养"
+        invalid_cases.append((unrecognized_objective, "objectives[1]"))
 
         narrated_prompt = observable_lesson_plan()
         narrated_prompt["stages"][1]["prompts"] = ["教师引导学生回答问题。"]
@@ -104,7 +110,7 @@ class GenerationValidationTests(unittest.TestCase):
 
     def test_lesson_plan_validation_failure_is_repaired_once(self):
         invalid = observable_lesson_plan()
-        invalid["objectives"][0] = "理解文章"
+        invalid["objectives"][0] = "深化文本素养"
         mocked = AsyncMock(side_effect=[invalid, observable_lesson_plan()])
 
         with patch("services.complete_json", mocked):
